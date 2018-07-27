@@ -45,7 +45,7 @@ functions:
               - MyQueue
               - Arn
     #onError: arn:aws:sqs:us-east-1:811338114639:ReceiverDLQ - this does not work either:  onError currently only supports SNS topic arns due to a race condition when using SQS queue arns and updating the IAM role. Please check the docs for more info.
-    #  Ref: LambdaFunctionDeadLetterQueue - this does not work, bug fix soon: https://github.com/serverless/serverless/pull/4120
+      #Ref: LambdaFunctionDeadLetterQueue - this does not work, bug fix soon: https://github.com/serverless/serverless/pull/4120
 
 resources:
   Resources:
@@ -55,22 +55,27 @@ resources:
         QueueName: "MyQueue"
         VisibilityTimeout: 30 # 30 sec.
         MessageRetentionPeriod: 60 # 60 sec.
+        RedrivePolicy:
+          deadLetterTargetArn:
+            "Fn::GetAtt":
+              - ReceiverDeadLetterQueue
+              - Arn
+          maxReceiveCount: 1
     # naming convention is important: {normalizedFunctionName}LambdaFunction, as described in doc: https://serverless.com/framework/docs/providers/aws/guide/resources#aws-cloudformation-resource-reference
-    ReceiverLambdaFunction:
-     Type: "AWS::Lambda::Function"
-     Properties:
-       DeadLetterConfig:
-         TargetArn:
-           "Fn::GetAtt":
-             - ReceiverDeadLetterQueue
-             - Arn
+    #ReceiverLambdaFunction:
+    #  Type: "AWS::Lambda::Function"
+    #  Properties:
+    #    DeadLetterConfig:
+    #      TargetArn:
+    #        "Fn::GetAtt":
+    #          - ReceiverDeadLetterQueue
+    #          - Arn
     ReceiverDeadLetterQueue:
       Type: "AWS::SQS::Queue"
       Properties:
         QueueName: "receiverDLQ"
         MessageRetentionPeriod: 1209600 # 14 days in seconds
 
-package:
-  exclude:
-    - images/**
-    - README.md
+
+# export QUEUE_URL=`aws sqs get-queue-url --queue-name MyQueue --query 'QueueUrl' --output text --profile=sls`
+# aws sqs send-message --queue-url ${QUEUE_URL} --message-body "test" --profile=sls
