@@ -1,0 +1,76 @@
+# serverless.yml
+
+service: sqs-triggers-demo-with-DLQ
+
+provider:
+  name: aws
+  runtime: nodejs6.10
+  profile: sls
+  region: us-east-1
+  iamRoleStatements:
+    # allow sending to MyQueue
+    - Effect: "Allow"
+      Action:
+        - "sqs:SendMessage"
+        - "sqs:GetQueueUrl"
+      Resource: "arn:aws:sqs:${self:provider.region}:811338114639:MyQueue"
+    - Effect: "Allow"
+      Action:
+        - "sqs:ListQueues"
+      Resource: "arn:aws:sqs:${self:provider.region}:811338114639:*"
+    # allow sending to dead-letter queue
+    - Sid: LambdaDLQPermissions
+      Effect: Allow
+      Action:
+        - "sqs:SendMessage"
+      Resource:
+        - "Fn::GetAtt":
+          - ReceiverDeadLetterQueue
+          - Arn
+
+
+functions:
+  sender:
+    handler: sender.handler
+    events:
+      - http:
+          path: v1/sender
+          method: post
+  receiver:
+    handler: receiver.handler
+    events:
+      - sqs:
+          arn:
+            Fn::GetAtt:
+              - MyQueue
+              - Arn
+    #onError: arn:aws:sqs:us-east-1:811338114639:ReceiverDLQ - this does not work either:  onError currently only supports SNS topic arns due to a race condition when using SQS queue arns and updating the IAM role. Please check the docs for more info.
+    #  Ref: LambdaFunctionDeadLetterQueue - this does not work, bug fix soon: https://github.com/serverless/serverless/pull/4120
+
+resources:
+  Resources:
+    MyQueue:
+      Type: "AWS::SQS::Queue"
+      Properties:
+        QueueName: "MyQueue"
+        VisibilityTimeout: 30 # 30 sec.
+        MessageRetentionPeriod: 60 # 60 sec.
+    # naming convention is important: {normalizedFunctionName}LambdaFunction, as described in doc: https://serverless.com/framework/docs/providers/aws/guide/resources#aws-cloudformation-resource-reference
+    ReceiverLambdaFunction:
+     Type: "AWS::Lambda::Function"
+     Properties:
+       DeadLetterConfig:
+         TargetArn:
+           "Fn::GetAtt":
+             - ReceiverDeadLetterQueue
+             - Arn
+    ReceiverDeadLetterQueue:
+      Type: "AWS::SQS::Queue"
+      Properties:
+        QueueName: "receiverDLQ"
+        MessageRetentionPeriod: 1209600 # 14 days in seconds
+
+package:
+  exclude:
+    - images/**
+    - README.md
